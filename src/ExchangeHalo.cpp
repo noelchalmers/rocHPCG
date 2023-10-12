@@ -54,6 +54,10 @@
 #include <cstdlib>
 #include <hip/hip_runtime.h>
 
+#ifdef OPT_ROCTX
+#include <roctracer/roctx.h>
+#endif
+
 /*!
   Communicates data that is at the border of the part of the domain assigned to this processor.
 
@@ -162,14 +166,17 @@ void PrepareSendBuffer(const SparseMatrix& A, const Vector& x)
     dim3 blocks((A.totalToBeSent - 1) / 128 + 1);
     dim3 threads(128);
 
-    kernel_gather<128><<<blocks, threads>>>(A.totalToBeSent,
+    kernel_gather<128><<<blocks, threads, 0, stream_interior>>>(A.totalToBeSent,
                                             x.d_values,
                                             A.d_elementsToSend,
                                             A.perm,
                                             A.d_send_buffer);
 
+    HIP_CHECK(hipEventRecord(halo_gather, stream_interior));
+
 #ifndef GPU_AWARE_MPI
     // Copy send buffer to host
+    HIP_CHECK(hipStreamWaitEvent(stream_halo, halo_gather, 0));
     HIP_CHECK(hipMemcpyAsync(A.send_buffer,
                              A.d_send_buffer,
                              sizeof(double) * A.totalToBeSent,
@@ -209,7 +216,11 @@ void ExchangeHaloAsync(const SparseMatrix& A, Vector& x)
     }
 
     // Synchronize stream to make sure that send buffer is available
+#ifdef GPU_AWARE_MPI
+    HIP_CHECK(hipEventSynchronize(halo_gather));
+#else
     HIP_CHECK(hipStreamSynchronize(stream_halo));
+#endif
 
     // Post async boundary sends
     offset = 0;
@@ -241,9 +252,15 @@ void ObtainRecvBuffer(const SparseMatrix& A, Vector& x)
 {
     int num_neighbors = A.numberOfSendNeighbors;
 
+#ifdef OPT_ROCTX
+  roctxRangePush("MPI ExchangeHalo");
+#endif
     // Synchronize boundary transfers
     EXIT_IF_HPCG_ERROR(MPI_Waitall(num_neighbors, A.recv_request, MPI_STATUSES_IGNORE));
     EXIT_IF_HPCG_ERROR(MPI_Waitall(num_neighbors, A.send_request, MPI_STATUSES_IGNORE));
+#ifdef OPT_ROCTX
+  roctxRangePop();
+#endif
 
 #ifndef GPU_AWARE_MPI
     // Update boundary values
@@ -252,6 +269,7 @@ void ObtainRecvBuffer(const SparseMatrix& A, Vector& x)
                              sizeof(double) * A.totalToBeSent,
                              hipMemcpyHostToDevice,
                              stream_halo));
+    HIP_CHECK(hipStreamSynchronize(stream_halo));
 #endif
 }
 #endif
