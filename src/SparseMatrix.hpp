@@ -271,9 +271,9 @@ inline void DeleteMatrix(SparseMatrix & A) {
       if (A.mtxIndL[i])      delete [] A.mtxIndL[i];
     }
 #else
-    if (A.matrixValues[0]) delete [] A.matrixValues[0];
-    if (A.mtxIndG[0])      delete [] A.mtxIndG[0];
-    if (A.mtxIndL[0])      delete [] A.mtxIndL[0];
+    if (!using_apu && A.matrixValues[0]) delete [] A.matrixValues[0];
+    if (!using_apu && A.mtxIndG[0])      delete [] A.mtxIndG[0];
+    if (!using_apu && A.mtxIndL[0])      delete [] A.mtxIndL[0];
 #endif
   }
 

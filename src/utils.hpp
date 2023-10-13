@@ -43,6 +43,8 @@ extern hipEvent_t halo_gather;
 extern void* workspace;
 // Memory allocator
 extern hipAllocator_t allocator;
+// Toggle for APU memory management
+extern bool using_apu;
 
 #define RNG_SEED 0x586744
 #define MAX_COLORS 128

@@ -506,15 +506,23 @@ void CopyProblemToHost(SparseMatrix& A, Vector* b, Vector* x, Vector* xexact)
     // Maximum number of local non-zeros
     global_int_t localNumberOfMaxNonzeros = (global_int_t)A.localNumberOfRows * A.numberOfNonzerosPerRow;
 
-    // Now allocate the arrays pointed to
-    A.mtxIndL[0] = new local_int_t[localNumberOfMaxNonzeros];
-    A.matrixValues[0] = new double[localNumberOfMaxNonzeros];
-    A.mtxIndG[0] = new global_int_t[localNumberOfMaxNonzeros];
+    if (!using_apu) {
+        // Now allocate the arrays pointed to
+        A.mtxIndL[0] = new local_int_t[localNumberOfMaxNonzeros];
+        A.matrixValues[0] = new double[localNumberOfMaxNonzeros];
+        A.mtxIndG[0] = new global_int_t[localNumberOfMaxNonzeros];
+
+        HIP_CHECK(hipMemcpy(A.mtxIndG[0], A.d_mtxIndG, sizeof(global_int_t) * localNumberOfMaxNonzeros, hipMemcpyDeviceToHost));
+        HIP_CHECK(hipMemcpy(A.matrixValues[0], A.d_matrixValues, sizeof(double) * localNumberOfMaxNonzeros, hipMemcpyDeviceToHost));
+    } else {
+        //Save some memory by re-using the GPU buffers
+        A.mtxIndL[0] = A.d_mtxIndL;
+        A.matrixValues[0] = A.d_matrixValues;
+        A.mtxIndG[0] = A.d_mtxIndG;
+    }
 
     // Copy GPU data to host
     HIP_CHECK(hipMemcpy(A.nonzerosInRow, A.d_nonzerosInRow, sizeof(char) * A.localNumberOfRows, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(A.mtxIndG[0], A.d_mtxIndG, sizeof(global_int_t) * localNumberOfMaxNonzeros, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(A.matrixValues[0], A.d_matrixValues, sizeof(double) * localNumberOfMaxNonzeros, hipMemcpyDeviceToHost));
     HIP_CHECK(hipMemcpy(mtxDiag, A.d_matrixDiagonal, sizeof(local_int_t) * A.localNumberOfRows, hipMemcpyDeviceToHost));
     HIP_CHECK(hipMemcpy(A.localToGlobalMap.data(), A.d_localToGlobalMap, sizeof(global_int_t) * A.localNumberOfRows, hipMemcpyDeviceToHost));
 

@@ -73,6 +73,7 @@ hipStream_t stream_halo;
 hipEvent_t halo_gather;
 void* workspace;
 hipAllocator_t allocator;
+bool using_apu;
 
 std::ofstream HPCG_fout; //!< output file stream for logging activities during HPCG run
 
@@ -212,6 +213,18 @@ HPCG_Init(int * argc_p, char ** *argv_p, HPCG_Params & params) {
 
   // Set device
   HIP_CHECK(hipSetDevice(params.device));
+
+  hipDeviceProp_t prop;
+  HIP_CHECK(hipGetDeviceProperties(&prop, params.device));
+  std::string gcnArchName{prop.gcnArchName};
+
+  if (gcnArchName.find("gfx940") != std::string::npos ||
+      gcnArchName.find("gfx941") != std::string::npos ||
+      gcnArchName.find("gfx942") != std::string::npos) {
+    using_apu = true;
+  } else {
+    using_apu = false;
+  }
 
   // Create streams
   HIP_CHECK(hipStreamCreate(&stream_interior));

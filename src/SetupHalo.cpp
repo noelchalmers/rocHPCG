@@ -661,5 +661,7 @@ void CopyHaloToHost(SparseMatrix& A)
     // Copy GPU data to host
     HIP_CHECK(hipMemcpy(A.elementsToSend, A.d_elementsToSend, sizeof(local_int_t) * A.totalToBeSent, hipMemcpyDeviceToHost));
 #endif
-    HIP_CHECK(hipMemcpy(A.mtxIndL[0], A.d_mtxIndL, sizeof(local_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, hipMemcpyDeviceToHost));
+    if (!using_apu) {
+        HIP_CHECK(hipMemcpy(A.mtxIndL[0], A.d_mtxIndL, sizeof(local_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, hipMemcpyDeviceToHost));
+    }
 }
