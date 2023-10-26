@@ -79,7 +79,7 @@ __global__ void kernel_dot1_part1(local_int_t n, const double* x, double* worksp
 
     __syncthreads();
 
-    if(threadIdx.x < 512) sdata[threadIdx.x] += sdata[threadIdx.x + 512]; __syncthreads();
+    //if(threadIdx.x < 512) sdata[threadIdx.x] += sdata[threadIdx.x + 512]; __syncthreads();
     if(threadIdx.x < 256) sdata[threadIdx.x] += sdata[threadIdx.x + 256]; __syncthreads();
     if(threadIdx.x < 128) sdata[threadIdx.x] += sdata[threadIdx.x + 128]; __syncthreads();
     if(threadIdx.x <  64) sdata[threadIdx.x] += sdata[threadIdx.x +  64]; __syncthreads();
@@ -116,6 +116,7 @@ __global__ void kernel_dot2_part1(local_int_t n,
 
     __syncthreads();
 
+    if(threadIdx.x < 256) sdata[threadIdx.x] += sdata[threadIdx.x + 256]; __syncthreads();
     if(threadIdx.x < 128) sdata[threadIdx.x] += sdata[threadIdx.x + 128]; __syncthreads();
     if(threadIdx.x <  64) sdata[threadIdx.x] += sdata[threadIdx.x +  64]; __syncthreads();
     if(threadIdx.x <  32) sdata[threadIdx.x] += sdata[threadIdx.x +  32]; __syncthreads();
@@ -139,7 +140,7 @@ __global__ void kernel_dot_part2(double* workspace)
 
     __syncthreads();
 
-    if(threadIdx.x < 512) sdata[threadIdx.x] += sdata[threadIdx.x + 512]; __syncthreads();
+    //if(threadIdx.x < 512) sdata[threadIdx.x] += sdata[threadIdx.x + 512]; __syncthreads();
     if(threadIdx.x < 256) sdata[threadIdx.x] += sdata[threadIdx.x + 256]; __syncthreads();
     if(threadIdx.x < 128) sdata[threadIdx.x] += sdata[threadIdx.x + 128]; __syncthreads();
     if(threadIdx.x <  64) sdata[threadIdx.x] += sdata[threadIdx.x +  64]; __syncthreads();
@@ -186,18 +187,20 @@ int ComputeDotProduct(local_int_t n,
 
     if(x.d_values == y.d_values)
     {
-        kernel_dot1_part1<1024><<<1024, 1024, 0, stream_interior>>>(n, x.d_values, tmp);
-        kernel_dot_part2<1024><<<1, 1024, 0, stream_interior>>>(tmp);
+        kernel_dot1_part1<512><<<512, 512, 0, stream_interior>>>(n, x.d_values, tmp);
+        kernel_dot_part2<512><<<1, 512, 0, stream_interior>>>(tmp);
     }
     else
     {
-        kernel_dot2_part1<256><<<256, 256, 0, stream_interior>>>(n, x.d_values, y.d_values, tmp);
-        kernel_dot_part2<256><<<1, 256, 0, stream_interior>>>(tmp);
+        kernel_dot2_part1<512><<<512, 512, 0, stream_interior>>>(n, x.d_values, y.d_values, tmp);
+        kernel_dot_part2<512><<<1, 512, 0, stream_interior>>>(tmp);
     }
 
     double local_result;
-    HIP_CHECK(hipMemcpyAsync(&local_result, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
+    //HIP_CHECK(hipMemcpyAsync(&local_result, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
     HIP_CHECK(hipStreamSynchronize(stream_interior));
+
+    local_result = tmp[0];
 
 #ifndef HPCG_NO_MPI
     double t0 = mytimer();

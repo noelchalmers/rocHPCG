@@ -120,10 +120,10 @@ int ComputeWAXPBY(local_int_t n,
     assert(y.localLength >= n);
     assert(w.localLength >= n);
 
-    dim3 blocks((n - 1) / 1024 + 1);
-    dim3 threads(1024);
+    dim3 blocks((n - 1) / 512 + 1);
+    dim3 threads(512);
 
-    kernel_waxpby<1024><<<blocks, threads,  0, stream_interior>>>(
+    kernel_waxpby<512><<<blocks, threads,  0, stream_interior>>>(
                                              n,
                                              alpha,
                                              x.d_values,
@@ -143,21 +143,25 @@ __global__ void kernel_fused_waxpby_dot_part1(local_int_t size,
                                               double* workspace)
 {
     local_int_t gid = blockIdx.x * BLOCKSIZE + threadIdx.x;
-    local_int_t inc = gridDim.x * blockDim.x;
+    local_int_t inc = gridDim.x * BLOCKSIZE;
 
     __shared__ double sdata[BLOCKSIZE];
-    sdata[threadIdx.x] = 0.0;
+
+    double yn = 0.0;
 
     for(local_int_t idx = gid; idx < size; idx += inc)
     {
         double val = fma(alpha, x[idx], y[idx]);
 
         y[idx] = val;
-        sdata[threadIdx.x] = fma(val, val, sdata[threadIdx.x]);
+
+        yn = fma(val, val, yn);
     }
 
+    sdata[threadIdx.x] = yn;
     __syncthreads();
 
+    if(threadIdx.x < 256) sdata[threadIdx.x] += sdata[threadIdx.x + 256]; __syncthreads();
     if(threadIdx.x < 128) sdata[threadIdx.x] += sdata[threadIdx.x + 128]; __syncthreads();
     if(threadIdx.x <  64) sdata[threadIdx.x] += sdata[threadIdx.x +  64]; __syncthreads();
     if(threadIdx.x <  32) sdata[threadIdx.x] += sdata[threadIdx.x +  32]; __syncthreads();
@@ -181,6 +185,7 @@ __global__ void kernel_fused_waxpby_dot_part2(double* workspace)
 
     __syncthreads();
 
+    if(threadIdx.x < 256) sdata[threadIdx.x] += sdata[threadIdx.x + 256]; __syncthreads();
     if(threadIdx.x < 128) sdata[threadIdx.x] += sdata[threadIdx.x + 128]; __syncthreads();
     if(threadIdx.x <  64) sdata[threadIdx.x] += sdata[threadIdx.x +  64]; __syncthreads();
     if(threadIdx.x <  32) sdata[threadIdx.x] += sdata[threadIdx.x +  32]; __syncthreads();
@@ -207,12 +212,14 @@ int ComputeFusedWAXPBYDot(local_int_t n,
 
     double* tmp = reinterpret_cast<double*>(workspace);
 
-    kernel_fused_waxpby_dot_part1<256><<<256, 256, 0, stream_interior>>>(n, alpha, x.d_values, y.d_values, tmp);
-    kernel_fused_waxpby_dot_part2<256><<<1, 256, 0, stream_interior>>>(tmp);
+    kernel_fused_waxpby_dot_part1<512><<<512, 512, 0, stream_interior>>>(n, alpha, x.d_values, y.d_values, tmp);
+    kernel_fused_waxpby_dot_part2<512><<<1, 512, 0, stream_interior>>>(tmp);
 
     double local_result;
-    HIP_CHECK(hipMemcpyAsync(&local_result, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
+    //HIP_CHECK(hipMemcpyAsync(&local_result, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
     HIP_CHECK(hipStreamSynchronize(stream_interior));
+
+    local_result = tmp[0];
 
 #ifndef HPCG_NO_MPI
     double t0 = mytimer();
